@@ -1,0 +1,221 @@
+#pragma once
+#include "Generic_connection_parser.hpp"
+
+namespace travel {
+#define MAX 3276
+template<class out_type,class in_value>
+out_type convert(const in_value & t)
+{
+    std::stringstream stream;
+    stream<<t;
+    out_type result;
+    stream>>result;
+    return result;
+
+}
+class Soluce : public Generic_mapper
+{ 
+		public:
+			virtual void read_stations(const std::string& _filename) override
+			{
+				std::ifstream infile(_filename.c_str(), std::ios::in);
+				if (!infile.is_open()) {
+					std::cout<<"File open file:"<<_filename<<std::endl;
+					return ;
+				}
+				std::string read_string;
+				std::getline(infile,read_string); //read first line, this line unuse
+				while (!infile.eof()) {
+					Station create_station;
+					std::getline(infile,read_string);
+					size_t found_name = read_string.find(",",0); // find name_station
+					std::string name_station = read_string.substr(0, found_name);
+					
+					size_t found_id = read_string.find(",", found_name+1); //find line id
+					std::string line_id = read_string.substr(found_name+1, found_id-found_name-1);
+					
+					size_t found_short_line = read_string.find(",", found_id+1); //find short line
+					std::string short_line = read_string.substr(found_id+1, found_short_line-found_id-1);
+					
+					size_t found_addr = read_string.find(",", found_short_line+1); //find address
+					std::string addr = read_string.substr(found_short_line+1, found_addr-found_short_line-1);
+					
+					std::string des = read_string.substr(found_addr+1); //get des
+					
+					create_station.name = name_station;
+					create_station.line_id = line_id;
+					create_station.address = addr;
+					create_station.line_name = short_line; 
+                    create_station.des = des;
+					uint64_t id = convert<uint64_t>(line_id);
+					
+					stations_hashmap.insert(std::unordered_map<uint64_t, Station>::value_type(id, create_station)); // add new station, key is line id
+					//std::cout<<__LINE__<<" "<<name_station<<" "<<line_id<<" "<<short_line<<" "<<addr<<" "<<std::endl;
+				}
+			};
+		
+		virtual void read_connections(const std::string& _filename) override
+		{
+				std::ifstream infile(_filename.c_str(), std::ios::in);
+				if (!infile.is_open()) {
+					std::cout<<"File open file:"<<_filename<<std::endl;
+					return ;
+				}
+				std::string read_string;
+                std::getline(infile,read_string);
+				while (!infile.eof()) {
+					
+					std::getline(infile,read_string);
+					size_t found_from = read_string.find(",",0); //find from id
+					uint64_t from_id = convert<uint64_t>(read_string.substr(0, found_from));
+					
+					size_t found_to = read_string.find(",", found_from+1); // find to id
+					uint64_t to_id = convert<uint64_t>(read_string.substr(found_from+1, found_to-found_from-1));
+					
+					uint64_t min = convert<uint64_t>(read_string.substr(found_to+1));
+					std::unordered_map<uint64_t, uint64_t> toMap;
+					toMap.insert(std::make_pair(to_id, min)); 
+					if (connections_hashmap.find(from_id) != connections_hashmap.end()) { // if have from_id, just add topMap to it
+						connections_hashmap[from_id].insert(std::make_pair(to_id, min));
+					} else { // if not have from_id, should insert
+						std::unordered_map<uint64_t, uint64_t> toMap;
+						toMap.insert(std::make_pair(to_id, min));
+						connections_hashmap.insert(std::make_pair(from_id, toMap));
+					}
+					//std::cout<<__LINE__<<" "<<from_id<<" "<<to_id<<" "<<min<<std::endl;
+				}
+		};
+
+
+	  virtual std::vector<std::pair<uint64_t,uint64_t> > compute_travel(uint64_t _start, uint64_t _end) override
+	  {
+		std::vector<std::pair<uint64_t,uint64_t> > retVec;
+		const std::unordered_map<uint64_t,std::unordered_map<uint64_t,uint64_t> >& conn_hashMap = this->get_connections_hashmap();
+		std::unordered_map<uint64_t,std::unordered_map<uint64_t,uint64_t> >::const_iterator find_start = conn_hashMap.find(_start); 
+		if (find_start == conn_hashMap.end()) {
+			std::cout<<"failed start station!"<<std::endl;
+		} else {
+			std::unordered_map<uint64_t,uint64_t> stopMap = find_start->second;
+			std::unordered_map<uint64_t,uint64_t>::iterator find_stop = stopMap.find(_end);
+			if (find_stop != stopMap.end()) {
+				retVec.push_back(std::make_pair(find_stop->first, find_stop->second));
+			}
+		}
+		return retVec;
+	  };
+	  
+	virtual std::vector<std::pair<uint64_t,uint64_t> > compute_and_display_travel(uint64_t _start, uint64_t _end) override
+	{
+        (void)(_start);
+        (void)_end;
+        std::vector<std::pair<uint64_t,uint64_t> > retVec;
+        return retVec;
+	};
+	virtual std::vector<std::pair<uint64_t,uint64_t> > compute_travel(const std::string&, const std::string&){
+        std::vector<std::pair<uint64_t,uint64_t> > retVec;
+        return retVec;
+    };
+	virtual std::vector<std::pair<uint64_t,uint64_t> > compute_and_display_travel(const std::string&, const std::string&){
+        std::vector<std::pair<uint64_t,uint64_t> > retVec;
+        return retVec;
+    };
+
+    void  display(std::vector<uint64_t>& _station_vec)
+    {
+        const std::unordered_map<uint64_t,std::unordered_map<uint64_t,uint64_t> >& connection_hashmap = this->get_connections_hashmap();
+        std::vector<uint64_t>::iterator it= _station_vec.begin();
+        for (; it != _station_vec.end(); it++) { // print path;
+            Station  station = stations_hashmap[*it];
+            std::cout<<station.name<<" (line:"<<station.line_id<<") "<<station.address<<" "<<station.des<<" ";
+            
+            if (it+1 != _station_vec.end()) { //compute time
+                uint64_t line_id = convert<uint64_t>(station.line_id);
+                auto it_find = connection_hashmap.find(line_id);
+                if (it_find != connection_hashmap.end()) {
+                    auto sec_map = it_find->second;
+                    line_id = convert<uint64_t>(stations_hashmap[*(it+1)].line_id);
+                    auto it_sec = sec_map.find(line_id);
+                    uint64_t time = it_sec->second;
+                    std::cout<<"("<<time<<")";       
+                }
+            }
+            std::cout<<std::endl;
+        }
+
+    }
+    void dijkstra(uint64_t _start, uint64_t _end)
+    {
+		const std::unordered_map<uint64_t,std::unordered_map<uint64_t,uint64_t> >& connection_hashmap = this->get_connections_hashmap();
+		std::unordered_map<uint64_t,uint64_t> end_map;
+        auto it_find = connection_hashmap.find(_start);
+        if (it_find != connection_hashmap.end()) {
+            end_map = it_find->second;
+        }
+		const int maxint = MAX;
+		uint64_t dist[maxint] = {MAX};
+		uint64_t prev[maxint];
+		bool S[maxint];
+        std::unordered_map<uint64_t,uint64_t>::iterator it = end_map.begin();
+		for (int i = 1; i < maxint; ++i) { // init all
+             it = end_map.find(i);
+            if (it != end_map.end()) { 
+                dist[i] = end_map[i]; // if connect with start
+            } else {
+                dist[i] = MAX; // not connect with start, time is max
+                
+            }
+			S[i] = false;
+			if (dist[i] == MAX) {
+				prev[i] = -1;
+			} else {
+				prev[i]  = _start;
+			}
+		}
+		dist[_start] = 0;
+		S[_start] = true;
+		for (int i = 2; i < maxint; i++) {
+			uint64_t mindist = maxint;
+			uint64_t u = _start;
+            //std::cout<<__LINE__<<" "<<i<<std::endl;
+			for (int j = 1; j < maxint; j++) { //find the min
+				if ((!S[j]) && dist[j] < mindist) {
+					u = j;
+					mindist = dist[j];
+				}
+			}
+            //std::cout<<__LINE__<<" "<<u<<" "<<dist[u]<<std::endl;
+			S[u] = true;
+            it_find = connection_hashmap.find(u);
+            if (it_find != connection_hashmap.end()) {
+                end_map = it_find->second; // end_map is dist[u]'s connect station
+            } else {
+                std::cout<<"Error!"<<std::endl;
+                return;
+            }
+			for (int j = 1; j < maxint; j++) { // updata pre
+				if ((!S[j]) && end_map[j] < MAX) {
+					if ((dist[u] + end_map[j]) < dist[j]) { //_start--> u --> j  better than   _start --> j
+                        it_find = connection_hashmap.find(u);
+                        if ((it_find->second).find(j) != (it_find->second).end()) { // if u connect with j
+						    dist[j] = dist[u] + end_map[j];
+						    prev[j] = u; // save u, j prev station is u;
+                           // std::cout<<__LINE__<<" "<<j<<" "<<u<<std::endl;
+                        }
+					}
+				}
+			}
+		}
+        std::vector<uint64_t> station_vec;
+        station_vec.push_back(_end);
+        uint64_t id = _end;
+        while (prev[id] != _start ) { // get line start-> end;
+            station_vec.insert(station_vec.begin(), prev[id]);
+            id = prev[id];
+        }
+        station_vec.insert(station_vec.begin(), _start);
+        display(station_vec); //print;
+	};
+
+};
+
+}
